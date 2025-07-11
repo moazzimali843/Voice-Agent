@@ -68,6 +68,51 @@ class LLMService:
         except Exception as e:
             logger.error(f"Error generating LLM response: {str(e)}")
             return None
+
+    async def generate_response_streaming(self, query: str, context_chunks: List[KnowledgeChunk]):
+        """
+        Generate streaming response using OpenAI API
+        
+        Args:
+            query: User's query
+            context_chunks: Relevant knowledge base chunks
+            
+        Yields:
+            Text chunks as they are generated
+        """
+        try:
+            # Build context from knowledge chunks
+            context = self._build_context(context_chunks)
+            
+            # Create prompt
+            prompt = self._create_prompt(query, context)
+            
+            # Generate streaming response
+            stream = await self.client.chat.completions.create(
+                model=settings.OPENAI_MODEL,
+                messages=[
+                    {"role": "system", "content": "You are a helpful legal assistant. Answer questions based on the provided context. Provide clear, concise responses."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=settings.MAX_TOKENS,
+                temperature=settings.TEMPERATURE,
+                top_p=0.9,
+                frequency_penalty=0.1,
+                presence_penalty=0.1,
+                stream=True
+            )
+            
+            logger.info(f"Starting streaming response for query: {query[:50]}...")
+            
+            async for chunk in stream:
+                if chunk.choices and len(chunk.choices) > 0:
+                    delta = chunk.choices[0].delta
+                    if delta and delta.content:
+                        yield delta.content
+                        
+        except Exception as e:
+            logger.error(f"Error in streaming LLM response: {str(e)}")
+            yield None
     
     async def generate_with_request(self, request: LLMRequest) -> Optional[LLMResponse]:
         """
@@ -208,6 +253,89 @@ RESPONSE:"""
         """
         # Rough approximation: 1 token ≈ 4 characters
         return len(text) // 4
+
+    def chunk_text_for_tts(self, text: str, max_tokens: int = 15) -> List[str]:
+        """
+        Split text into chunks suitable for TTS streaming
+        
+        Args:
+            text: Text to chunk
+            max_tokens: Maximum tokens per chunk
+            
+        Returns:
+            List of text chunks
+        """
+        # Split by sentences first
+        import re
+        sentences = re.split(r'(?<=[.!?])\s+', text)
+        
+        chunks = []
+        current_chunk = ""
+        
+        for sentence in sentences:
+            sentence = sentence.strip()
+            if not sentence:
+                continue
+                
+            # If adding this sentence would exceed max tokens, save current chunk
+            if current_chunk and self.estimate_tokens(current_chunk + " " + sentence) > max_tokens:
+                chunks.append(current_chunk.strip())
+                current_chunk = sentence
+            else:
+                if current_chunk:
+                    current_chunk += " " + sentence
+                else:
+                    current_chunk = sentence
+        
+        # Add the last chunk if it exists
+        if current_chunk.strip():
+            chunks.append(current_chunk.strip())
+        
+        return chunks
+
+    async def buffer_text_for_chunking(self, text_stream, min_chunk_size: int = 10):
+        """
+        Buffer streaming text and yield chunks when ready
+        
+        Args:
+            text_stream: Async stream of text pieces
+            min_chunk_size: Minimum characters before yielding a chunk
+            
+        Yields:
+            Text chunks ready for TTS
+        """
+        buffer = ""
+        
+        async for text_piece in text_stream:
+            if text_piece is None:
+                continue
+                
+            buffer += text_piece
+            
+            # Check if we have a complete sentence or enough text
+            if (len(buffer) >= min_chunk_size and 
+                (buffer.endswith('.') or buffer.endswith('!') or buffer.endswith('?') or
+                 buffer.endswith('. ') or buffer.endswith('! ') or buffer.endswith('? '))):
+                
+                # Yield the chunk
+                yield buffer.strip()
+                buffer = ""
+            
+            # If buffer gets too long, yield it anyway
+            elif len(buffer) > 100:
+                # Try to break at a word boundary
+                words = buffer.split()
+                if len(words) > 1:
+                    chunk = " ".join(words[:-1])
+                    buffer = words[-1]
+                    yield chunk.strip()
+                else:
+                    yield buffer.strip()
+                    buffer = ""
+        
+        # Yield any remaining text
+        if buffer.strip():
+            yield buffer.strip()
     
     def validate_request(self, request: LLMRequest) -> bool:
         """

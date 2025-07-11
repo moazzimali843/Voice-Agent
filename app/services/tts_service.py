@@ -178,6 +178,65 @@ class TTSService:
             'estimated_duration_seconds': round(len(audio_data) / (settings.AUDIO_SAMPLE_RATE * 2), 2)  # Rough estimate
         }
     
+    async def convert_text_chunk_to_speech(self, text: str, voice: str = "aura-asteria-en", format: str = "mp3") -> Optional[bytes]:
+        """
+        Convert a small text chunk to speech (optimized for streaming)
+        
+        Args:
+            text: Small text chunk to convert
+            voice: Voice model to use
+            format: Audio format (mp3, wav, etc.)
+            
+        Returns:
+            Audio bytes or None if error
+        """
+        try:
+            # Skip very short or empty text
+            if not text or len(text.strip()) < 3:
+                return None
+                
+            # Prepare headers
+            headers = {
+                "Authorization": f"Token {self.api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            # Prepare request body
+            payload = {
+                "text": text.strip()
+            }
+            
+            # Prepare query parameters
+            params = {
+                "model": voice,
+                "encoding": format
+            }
+            
+            # Only add sample_rate for wav format
+            if format.lower() == "wav":
+                params["sample_rate"] = str(settings.AUDIO_SAMPLE_RATE)
+            
+            # Make HTTP request with shorter timeout for small chunks
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    self.base_url,
+                    headers=headers,
+                    params=params,
+                    json=payload,
+                    timeout=15.0  # Shorter timeout for small chunks
+                )
+                
+                if response.status_code == 200:
+                    logger.info(f"Successfully converted text chunk to speech: {text[:30]}...")
+                    return response.content
+                else:
+                    logger.error(f"Deepgram TTS API error for chunk: {response.status_code} - {response.text}")
+                    return None
+            
+        except Exception as e:
+            logger.error(f"Error converting text chunk to speech: {str(e)}")
+            return None
+
     async def test_tts_connection(self) -> bool:
         """
         Test TTS service connection

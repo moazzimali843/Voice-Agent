@@ -92,7 +92,7 @@ async def root():
             <!DOCTYPE html>
             <html>
             <head>
-                <title>Voice Agent</title>
+                <title>Voice Agent v2.0 - Sequential Audio</title>
                 <style>
                     body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
                     .container { text-align: center; }
@@ -106,11 +106,13 @@ async def root():
             </head>
             <body>
                 <div class="container">
-                    <h1>Voice Agent</h1>
+                    <h1>Voice Agent v2.0</h1>
+                    <p><strong>Sequential Audio Queue System</strong> - Chunks play one after another</p>
                     <div id="status" class="status">Not connected</div>
                     <button onclick="startSession()">Start Session</button>
                     <button onclick="startRecording()" disabled id="recordBtn">Start Recording</button>
                     <button onclick="stopRecording()" disabled id="stopBtn">Stop Recording</button>
+                    <button onclick="clearCache()" style="background-color: #e74c3c; color: white;">Clear Cache & Reload</button>
                     <div id="messages"></div>
                 </div>
                 
@@ -151,28 +153,38 @@ async def root():
                         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
                         websocket = new WebSocket(protocol + '//' + window.location.host + '/api/v1/ws/' + sessionId);
                         
+                        let chunkCounter = 0;
+                        
                         websocket.onmessage = function(event) {
                             if (event.data instanceof Blob) {
-                                // Handle audio response
-                                const audio = new Audio();
-                                audio.src = URL.createObjectURL(event.data);
-                                audio.play();
-                                addMessage('🔊 Playing audio response');
+                                // ONLY handle audio through queue system - no direct playing!
+                                chunkCounter++;
+                                queueAudioChunk(event.data, chunkCounter);
                             } else {
                                 // Handle text messages
-                                const data = JSON.parse(event.data);
-                                handleWebSocketMessage(data);
+                                try {
+                                    const data = JSON.parse(event.data);
+                                    handleWebSocketMessage(data);
+                                } catch (e) {
+                                    console.error('Error parsing WebSocket message:', e);
+                                }
                             }
                         };
                         
                         websocket.onopen = function() {
-                            addMessage('WebSocket connected');
+                            console.log('[WEBSOCKET] Connected - Audio Queue System v2.0 Active');
+                            addMessage('🔗 WebSocket connected - Queue System v2.0 Ready');
                         };
                         
                         websocket.onclose = function() {
                             addMessage('WebSocket disconnected');
                         };
                     }
+                    
+                    let currentResponse = "";
+                    let audioQueue = [];
+                    let isPlayingAudio = false;
+                    let currentAudio = null;
                     
                     function handleWebSocketMessage(data) {
                         switch(data.type) {
@@ -186,17 +198,130 @@ async def root():
                                 break;
                             case 'transcription':
                                 addMessage('📝 You said: ' + data.text);
+                                currentResponse = ""; // Reset response for new query
+                                audioQueue = []; // Clear audio queue for new query
+                                chunkCounter = 0; // Reset chunk counter for new query
+                                if (currentAudio) {
+                                    currentAudio.pause(); // Stop any playing audio
+                                    currentAudio = null;
+                                }
+                                isPlayingAudio = false;
                                 break;
-                            case 'response':
-                                addMessage('🤖 Assistant: ' + data.text);
+                            case 'text_chunk':
+                                // Build response incrementally
+                                currentResponse += data.chunk + " ";
+                                // Update the response display in real-time
+                                updateOrAddResponse('🤖 Assistant: ' + currentResponse);
+                                break;
+                            case 'audio_chunk_sent':
+                                addMessage('🔊 Audio chunk ' + data.chunk_number + ' queued');
+                                break;
+                            case 'response_complete':
+                                addMessage('✅ Response complete (' + data.total_chunks + ' chunks)');
                                 break;
                             case 'processing':
-                                addMessage('⏳ Processing: ' + data.step);
+                                if (data.step.includes('converting_chunk')) {
+                                    addMessage('⏳ Converting chunk to speech...');
+                                } else {
+                                    addMessage('⏳ Processing: ' + data.step);
+                                }
+                                break;
+                            case 'warning':
+                                addMessage('⚠️ Warning: ' + data.message);
                                 break;
                             case 'error':
                                 addMessage('❌ Error: ' + data.message);
                                 break;
                         }
+                    }
+                    
+                    function queueAudioChunk(audioBlob, chunkNumber) {
+                        console.log('[QUEUE] Adding audio chunk', chunkNumber, 'to queue');
+                        
+                        // Add audio chunk to queue
+                        audioQueue.push({
+                            blob: audioBlob,
+                            number: chunkNumber
+                        });
+                        
+                        addMessage('🎵 [QUEUE] Audio chunk ' + chunkNumber + ' added to queue (Queue size: ' + audioQueue.length + ')');
+                        
+                        // Start playing if not already playing
+                        if (!isPlayingAudio) {
+                            console.log('[QUEUE] Starting playback - no audio currently playing');
+                            playNextAudioChunk();
+                        } else {
+                            console.log('[QUEUE] Audio already playing, chunk will wait in queue');
+                        }
+                    }
+                    
+                    function playNextAudioChunk() {
+                        console.log('[PLAYBACK] playNextAudioChunk called, queue length:', audioQueue.length);
+                        
+                        if (audioQueue.length === 0) {
+                            isPlayingAudio = false;
+                            console.log('[PLAYBACK] Queue empty, stopping playback');
+                            addMessage('🔇 [QUEUE] All audio chunks played - queue empty');
+                            return;
+                        }
+                        
+                        isPlayingAudio = true;
+                        const audioItem = audioQueue.shift(); // Get first item from queue
+                        
+                        console.log('[PLAYBACK] Playing chunk', audioItem.number, 'remaining in queue:', audioQueue.length);
+                        
+                        // Create audio element
+                        currentAudio = new Audio();
+                        currentAudio.src = URL.createObjectURL(audioItem.blob);
+                        
+                        addMessage('🔊 [QUEUE] Now playing audio chunk ' + audioItem.number + ' (Queue remaining: ' + audioQueue.length + ')');
+                        
+                        // Play current chunk
+                        currentAudio.play().catch(error => {
+                            console.error('Error playing audio chunk:', error);
+                            addMessage('❌ Error playing audio chunk ' + audioItem.number);
+                            // Continue to next chunk even if this one fails
+                            playNextAudioChunk();
+                        });
+                        
+                        // When current chunk ends, play next chunk
+                        currentAudio.onended = function() {
+                            console.log('[PLAYBACK] Chunk', audioItem.number, 'finished playing');
+                            addMessage('✅ [QUEUE] Finished playing chunk ' + audioItem.number);
+                            URL.revokeObjectURL(currentAudio.src); // Clean up
+                            currentAudio = null;
+                            
+                            // Play next chunk after a small delay
+                            setTimeout(() => {
+                                console.log('[PLAYBACK] Moving to next chunk after delay');
+                                playNextAudioChunk();
+                            }, 50); // 50ms gap between chunks for natural flow
+                        };
+                        
+                        // Handle errors
+                        currentAudio.onerror = function() {
+                            addMessage('❌ Error playing audio chunk ' + audioItem.number);
+                            URL.revokeObjectURL(currentAudio.src);
+                            currentAudio = null;
+                            // Continue to next chunk
+                            setTimeout(() => {
+                                playNextAudioChunk();
+                            }, 50);
+                        };
+                    }
+                    
+                    function updateOrAddResponse(message) {
+                        const messagesDiv = document.getElementById('messages');
+                        const lastMessage = messagesDiv.lastElementChild;
+                        
+                        // If the last message is from the assistant, update it
+                        if (lastMessage && lastMessage.textContent.startsWith('🤖 Assistant:')) {
+                            lastMessage.textContent = message;
+                        } else {
+                            // Otherwise, add a new message
+                            messagesDiv.innerHTML += '<div>' + message + '</div>';
+                        }
+                        messagesDiv.scrollTop = messagesDiv.scrollHeight;
                     }
                     
                     async function startRecording() {
@@ -235,6 +360,19 @@ async def root():
                             document.getElementById('stopBtn').disabled = true;
                             addMessage('🔍 Processing audio...');
                         }
+                    }
+                    
+                    function clearCache() {
+                        // Clear all caches and reload
+                        if ('caches' in window) {
+                            caches.keys().then(names => {
+                                names.forEach(name => {
+                                    caches.delete(name);
+                                });
+                            });
+                        }
+                        // Force reload with cache busting
+                        window.location.reload(true);
                     }
                 </script>
             </body>

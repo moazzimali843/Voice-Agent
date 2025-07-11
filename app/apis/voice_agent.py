@@ -259,44 +259,71 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                 "step": "generating"
             })
             
-            # Generate response
-            llm_response = await llm_service.generate_response(transcript, relevant_chunks)
-            
-            if not llm_response:
-                await websocket_manager.send_message(session_id, {
-                    "type": "error",
-                    "message": "Failed to generate response"
-                })
-                continue
-            
-            # Send text response
-            await websocket_manager.send_message(session_id, {
-                "type": "response",
-                "text": llm_response.response
-            })
-            
-            # Send processing status
+            # Generate streaming response
             await websocket_manager.send_message(session_id, {
                 "type": "processing",
-                "step": "converting"
+                "step": "generating"
             })
             
-            # Convert to speech
-            tts_response = await tts_service.convert_text_to_speech(llm_response.response)
-            
-            if tts_response and tts_response.audio_data:
-                # Send audio response
-                await websocket_manager.send_audio(session_id, tts_response.audio_data)
+            try:
+                # Start streaming response
+                text_stream = llm_service.generate_response_streaming(transcript, relevant_chunks)
                 
-                # Send completion status
+                # Buffer and chunk the streaming text
+                chunk_stream = llm_service.buffer_text_for_chunking(text_stream, min_chunk_size=15)
+                
+                full_response = ""
+                chunk_count = 0
+                
+                async for text_chunk in chunk_stream:
+                    if not text_chunk:
+                        continue
+                    
+                    chunk_count += 1
+                    full_response += text_chunk + " "
+                    
+                    # Send text chunk to frontend
+                    await websocket_manager.send_message(session_id, {
+                        "type": "text_chunk",
+                        "chunk": text_chunk,
+                        "chunk_number": chunk_count
+                    })
+                    
+                    # Convert chunk to speech immediately
+                    await websocket_manager.send_message(session_id, {
+                        "type": "processing",
+                        "step": f"converting_chunk_{chunk_count}"
+                    })
+                    
+                    audio_data = await tts_service.convert_text_chunk_to_speech(text_chunk)
+                    
+                    if audio_data:
+                        # Send audio chunk immediately
+                        await websocket_manager.send_audio(session_id, audio_data)
+                        
+                        await websocket_manager.send_message(session_id, {
+                            "type": "audio_chunk_sent",
+                            "chunk_number": chunk_count
+                        })
+                    else:
+                        await websocket_manager.send_message(session_id, {
+                            "type": "warning",
+                            "message": f"Failed to convert chunk {chunk_count} to speech"
+                        })
+                
+                # Send final completion status
                 await websocket_manager.send_message(session_id, {
-                    "type": "complete",
+                    "type": "response_complete",
+                    "full_response": full_response.strip(),
+                    "total_chunks": chunk_count,
                     "timestamp": datetime.now().isoformat()
                 })
-            else:
+                
+            except Exception as e:
+                logger.error(f"Error in streaming response: {str(e)}")
                 await websocket_manager.send_message(session_id, {
                     "type": "error",
-                    "message": "Failed to convert response to speech"
+                    "message": "Failed to generate streaming response"
                 })
     
     except WebSocketDisconnect:
