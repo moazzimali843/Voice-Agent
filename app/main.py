@@ -87,33 +87,221 @@ async def root():
             with open(static_path, 'r') as f:
                 return HTMLResponse(content=f.read())
         else:
-            # Return basic HTML page
+            # Return modern voice interface
             return HTMLResponse(content="""
             <!DOCTYPE html>
             <html>
             <head>
-                <title>Voice Agent v2.0 - Sequential Audio</title>
+                <title>Voice Agent</title>
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
                 <style>
-                    body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
-                    .container { text-align: center; }
-                    .status { padding: 10px; margin: 10px; border-radius: 5px; }
-                    .loading { background-color: #ffeaa7; }
-                    .ready { background-color: #00b894; color: white; }
-                    .error { background-color: #e17055; color: white; }
-                    button { padding: 10px 20px; margin: 10px; font-size: 16px; cursor: pointer; }
-                    #messages { text-align: left; margin-top: 20px; padding: 10px; background-color: #f0f0f0; border-radius: 5px; }
+                    * {
+                        margin: 0;
+                        padding: 0;
+                        box-sizing: border-box;
+                    }
+                    
+                    body {
+                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        min-height: 100vh;
+                        display: flex;
+                        flex-direction: column;
+                        align-items: center;
+                        justify-content: center;
+                        overflow: hidden;
+                    }
+                    
+                    .container {
+                        text-align: center;
+                        z-index: 10;
+                    }
+                    
+                    .title {
+                        color: white;
+                        font-size: 2.5rem;
+                        font-weight: 300;
+                        margin-bottom: 3rem;
+                        opacity: 0.9;
+                    }
+                    
+                    .orb-container {
+                        position: relative;
+                        width: 200px;
+                        height: 200px;
+                        margin: 0 auto 3rem auto;
+                    }
+                    
+                    .orb {
+                        width: 200px;
+                        height: 200px;
+                        border-radius: 50%;
+                        background: linear-gradient(45deg, #00d4ff, #ff00ea, #00ff88, #ffaa00);
+                        background-size: 400% 400%;
+                        animation: gradientShift 3s ease-in-out infinite;
+                        position: relative;
+                        box-shadow: 0 0 40px rgba(255, 255, 255, 0.3);
+                        cursor: pointer;
+                        transition: all 0.3s ease;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        color: white;
+                        font-size: 1.2rem;
+                        font-weight: 500;
+                    }
+                    
+                    .orb.listening {
+                        animation: gradientShift 1s ease-in-out infinite, pulse 2s ease-in-out infinite;
+                        box-shadow: 0 0 60px rgba(255, 255, 255, 0.5);
+                        transform: scale(1.1);
+                    }
+                    
+                    .orb.processing {
+                        animation: gradientShift 0.5s ease-in-out infinite, rotate 2s linear infinite;
+                        box-shadow: 0 0 80px rgba(0, 212, 255, 0.6);
+                    }
+                    
+                    .orb::before {
+                        content: '';
+                        position: absolute;
+                        top: 10%;
+                        left: 10%;
+                        width: 80%;
+                        height: 80%;
+                        border-radius: 50%;
+                        background: linear-gradient(45deg, transparent, rgba(255, 255, 255, 0.2));
+                        animation: rotate 4s linear infinite reverse;
+                    }
+                    
+                    @keyframes gradientShift {
+                        0% { background-position: 0% 50%; }
+                        50% { background-position: 100% 50%; }
+                        100% { background-position: 0% 50%; }
+                    }
+                    
+                    @keyframes pulse {
+                        0%, 100% { transform: scale(1.1); }
+                        50% { transform: scale(1.2); }
+                    }
+                    
+                    @keyframes rotate {
+                        from { transform: rotate(0deg); }
+                        to { transform: rotate(360deg); }
+                    }
+                    
+                    .status {
+                        color: white;
+                        font-size: 1.2rem;
+                        margin: 1rem 0;
+                        opacity: 0.8;
+                        min-height: 30px;
+                    }
+                    
+                    .buttons {
+                        display: flex;
+                        gap: 2rem;
+                        justify-content: center;
+                        margin-top: 2rem;
+                    }
+                    
+                    .btn {
+                        padding: 12px 24px;
+                        border: 2px solid rgba(255, 255, 255, 0.3);
+                        background: rgba(255, 255, 255, 0.1);
+                        color: white;
+                        border-radius: 25px;
+                        font-size: 1rem;
+                        font-weight: 500;
+                        cursor: pointer;
+                        transition: all 0.3s ease;
+                        backdrop-filter: blur(10px);
+                        min-width: 120px;
+                    }
+                    
+                    .btn:hover {
+                        background: rgba(255, 255, 255, 0.2);
+                        border-color: rgba(255, 255, 255, 0.5);
+                        transform: translateY(-2px);
+                        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+                    }
+                    
+                    .btn:disabled {
+                        opacity: 0.5;
+                        cursor: not-allowed;
+                        transform: none;
+                    }
+                    
+                    .btn.primary {
+                        background: linear-gradient(45deg, #00d4ff, #ff00ea);
+                        border: none;
+                    }
+                    
+                    .btn.primary:hover {
+                        box-shadow: 0 5px 20px rgba(0, 212, 255, 0.4);
+                    }
+                    
+
+                    
+                    .wave-animation {
+                        position: absolute;
+                        top: 50%;
+                        left: 50%;
+                        width: 300px;
+                        height: 300px;
+                        margin: -150px 0 0 -150px;
+                        border-radius: 50%;
+                        border: 2px solid rgba(255, 255, 255, 0.1);
+                        animation: wave 3s ease-in-out infinite;
+                        pointer-events: none;
+                    }
+                    
+                    .wave-animation:nth-child(2) {
+                        animation-delay: 1s;
+                        width: 400px;
+                        height: 400px;
+                        margin: -200px 0 0 -200px;
+                    }
+                    
+                    .wave-animation:nth-child(3) {
+                        animation-delay: 2s;
+                        width: 500px;
+                        height: 500px;
+                        margin: -250px 0 0 -250px;
+                    }
+                    
+                    @keyframes wave {
+                        0% { transform: scale(0); opacity: 1; }
+                        100% { transform: scale(1); opacity: 0; }
+                    }
+                    
+                    @media (max-width: 768px) {
+                        .title { font-size: 2rem; }
+                        .orb-container { width: 150px; height: 150px; }
+                        .orb { width: 150px; height: 150px; }
+                        .buttons { flex-direction: column; align-items: center; gap: 1rem; }
+                    }
                 </style>
             </head>
             <body>
                 <div class="container">
-                    <h1>Voice Agent v2.0</h1>
-                    <p><strong>Sequential Audio Queue System</strong> - Chunks play one after another</p>
-                    <div id="status" class="status">Not connected</div>
-                    <button onclick="startSession()">Start Session</button>
-                    <button onclick="startRecording()" disabled id="recordBtn">Start Recording</button>
-                    <button onclick="stopRecording()" disabled id="stopBtn">Stop Recording</button>
-                    <button onclick="clearCache()" style="background-color: #e74c3c; color: white;">Clear Cache & Reload</button>
-                    <div id="messages"></div>
+                    <h1 class="title">Voice Agent</h1>
+                    
+                    <div class="orb-container">
+                        <div class="orb" id="mainOrb" onclick="toggleRecording()">
+                            <span id="orbText">Tap to speak</span>
+                            <div class="wave-animation"></div>
+                            <div class="wave-animation"></div>
+                            <div class="wave-animation"></div>
+                        </div>
+                    </div>
+                    
+                    <div class="status" id="status">Ready to start</div>
+                    
+                    <div class="buttons">
+                        <button class="btn primary" onclick="startSession()" id="startBtn">Start Session</button>
+                        <button class="btn" onclick="endSession()" id="endBtn" disabled>End Session</button>
+                    </div>
                 </div>
                 
                 <script>
@@ -121,31 +309,53 @@ async def root():
                     let websocket = null;
                     let mediaRecorder = null;
                     let recordingChunks = [];
+                    let isRecording = false;
+                    let isSessionActive = false;
                     
-                    function updateStatus(message, className) {
-                        const statusDiv = document.getElementById('status');
-                        statusDiv.textContent = message;
-                        statusDiv.className = 'status ' + className;
+                    // Audio queue system
+                    let currentResponse = "";
+                    let audioQueue = [];
+                    let isPlayingAudio = false;
+                    let currentAudio = null;
+                    let chunkCounter = 0;
+                    
+                    const orb = document.getElementById('mainOrb');
+                    const orbText = document.getElementById('orbText');
+                    const status = document.getElementById('status');
+                    const startBtn = document.getElementById('startBtn');
+                    const endBtn = document.getElementById('endBtn');
+                    
+                    function updateStatus(message) {
+                        status.textContent = message;
                     }
                     
-                    function addMessage(message) {
-                        const messagesDiv = document.getElementById('messages');
-                        messagesDiv.innerHTML += '<div>' + message + '</div>';
-                        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                    function updateOrbText(text) {
+                        orbText.textContent = text;
                     }
                     
                     async function startSession() {
                         try {
+                            updateStatus('Starting session...');
+                            orb.classList.add('processing');
+                            updateOrbText('Loading...');
+                            
                             const response = await fetch('/api/v1/start-session', {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' }
                             });
                             const data = await response.json();
                             sessionId = data.session_id;
-                            updateStatus('Loading knowledge base...', 'loading');
+                            
                             connectWebSocket();
+                            
+                            startBtn.disabled = true;
+                            endBtn.disabled = false;
+                            isSessionActive = true;
+                            
                         } catch (error) {
-                            updateStatus('Error starting session: ' + error.message, 'error');
+                            updateStatus('Error starting session: ' + error.message);
+                            orb.classList.remove('processing');
+                            updateOrbText('Error');
                         }
                     }
                     
@@ -153,15 +363,11 @@ async def root():
                         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
                         websocket = new WebSocket(protocol + '//' + window.location.host + '/api/v1/ws/' + sessionId);
                         
-                        let chunkCounter = 0;
-                        
                         websocket.onmessage = function(event) {
                             if (event.data instanceof Blob) {
-                                // ONLY handle audio through queue system - no direct playing!
                                 chunkCounter++;
                                 queueAudioChunk(event.data, chunkCounter);
                             } else {
-                                // Handle text messages
                                 try {
                                     const data = JSON.parse(event.data);
                                     handleWebSocketMessage(data);
@@ -172,156 +378,125 @@ async def root():
                         };
                         
                         websocket.onopen = function() {
-                            console.log('[WEBSOCKET] Connected - Audio Queue System v2.0 Active');
-                            addMessage('🔗 WebSocket connected - Queue System v2.0 Ready');
+                            console.log('WebSocket connected - Audio Queue System Active');
                         };
                         
                         websocket.onclose = function() {
-                            addMessage('WebSocket disconnected');
+                            console.log('WebSocket disconnected');
                         };
                     }
-                    
-                    let currentResponse = "";
-                    let audioQueue = [];
-                    let isPlayingAudio = false;
-                    let currentAudio = null;
                     
                     function handleWebSocketMessage(data) {
                         switch(data.type) {
                             case 'session_update':
                                 if (data.status === 'ready') {
-                                    updateStatus('Ready for voice input', 'ready');
-                                    document.getElementById('recordBtn').disabled = false;
+                                    updateStatus('Ready for voice input');
+                                    orb.classList.remove('processing');
+                                    updateOrbText('Tap to speak');
                                 } else if (data.status === 'error') {
-                                    updateStatus('Error loading knowledge base', 'error');
+                                    updateStatus('Error loading knowledge base');
+                                    orb.classList.remove('processing');
+                                    updateOrbText('Error');
                                 }
                                 break;
                             case 'transcription':
-                                addMessage('📝 You said: ' + data.text);
-                                currentResponse = ""; // Reset response for new query
-                                audioQueue = []; // Clear audio queue for new query
-                                chunkCounter = 0; // Reset chunk counter for new query
+                                // Just clear audio queue, don't show text
+                                currentResponse = "";
+                                audioQueue = [];
+                                chunkCounter = 0;
                                 if (currentAudio) {
-                                    currentAudio.pause(); // Stop any playing audio
+                                    currentAudio.pause();
                                     currentAudio = null;
                                 }
                                 isPlayingAudio = false;
                                 break;
                             case 'text_chunk':
-                                // Build response incrementally
+                                // Build response but don't display it
                                 currentResponse += data.chunk + " ";
-                                // Update the response display in real-time
-                                updateOrAddResponse('🤖 Assistant: ' + currentResponse);
-                                break;
-                            case 'audio_chunk_sent':
-                                addMessage('🔊 Audio chunk ' + data.chunk_number + ' queued');
-                                break;
-                            case 'response_complete':
-                                addMessage('✅ Response complete (' + data.total_chunks + ' chunks)');
                                 break;
                             case 'processing':
-                                if (data.step.includes('converting_chunk')) {
-                                    addMessage('⏳ Converting chunk to speech...');
-                                } else {
-                                    addMessage('⏳ Processing: ' + data.step);
+                                if (data.step === 'transcribing') {
+                                    updateStatus('Transcribing...');
+                                    orb.classList.add('processing');
+                                    updateOrbText('Listening...');
+                                } else if (data.step === 'searching') {
+                                    updateStatus('Searching knowledge base...');
+                                    updateOrbText('Thinking...');
+                                } else if (data.step === 'generating') {
+                                    updateStatus('Generating response...');
+                                    updateOrbText('Responding...');
                                 }
                                 break;
-                            case 'warning':
-                                addMessage('⚠️ Warning: ' + data.message);
+                            case 'response_complete':
+                                updateStatus('Response complete');
+                                orb.classList.remove('processing');
+                                updateOrbText('Tap to speak');
                                 break;
                             case 'error':
-                                addMessage('❌ Error: ' + data.message);
+                                updateStatus('Error: ' + data.message);
+                                orb.classList.remove('processing', 'listening');
+                                updateOrbText('Error');
                                 break;
                         }
                     }
                     
                     function queueAudioChunk(audioBlob, chunkNumber) {
-                        console.log('[QUEUE] Adding audio chunk', chunkNumber, 'to queue');
-                        
-                        // Add audio chunk to queue
                         audioQueue.push({
                             blob: audioBlob,
                             number: chunkNumber
                         });
                         
-                        addMessage('🎵 [QUEUE] Audio chunk ' + chunkNumber + ' added to queue (Queue size: ' + audioQueue.length + ')');
-                        
-                        // Start playing if not already playing
                         if (!isPlayingAudio) {
-                            console.log('[QUEUE] Starting playback - no audio currently playing');
                             playNextAudioChunk();
-                        } else {
-                            console.log('[QUEUE] Audio already playing, chunk will wait in queue');
                         }
                     }
                     
                     function playNextAudioChunk() {
-                        console.log('[PLAYBACK] playNextAudioChunk called, queue length:', audioQueue.length);
-                        
                         if (audioQueue.length === 0) {
                             isPlayingAudio = false;
-                            console.log('[PLAYBACK] Queue empty, stopping playback');
-                            addMessage('🔇 [QUEUE] All audio chunks played - queue empty');
                             return;
                         }
                         
                         isPlayingAudio = true;
-                        const audioItem = audioQueue.shift(); // Get first item from queue
+                        const audioItem = audioQueue.shift();
                         
-                        console.log('[PLAYBACK] Playing chunk', audioItem.number, 'remaining in queue:', audioQueue.length);
-                        
-                        // Create audio element
                         currentAudio = new Audio();
                         currentAudio.src = URL.createObjectURL(audioItem.blob);
                         
-                        addMessage('🔊 [QUEUE] Now playing audio chunk ' + audioItem.number + ' (Queue remaining: ' + audioQueue.length + ')');
-                        
-                        // Play current chunk
                         currentAudio.play().catch(error => {
                             console.error('Error playing audio chunk:', error);
-                            addMessage('❌ Error playing audio chunk ' + audioItem.number);
-                            // Continue to next chunk even if this one fails
                             playNextAudioChunk();
                         });
                         
-                        // When current chunk ends, play next chunk
                         currentAudio.onended = function() {
-                            console.log('[PLAYBACK] Chunk', audioItem.number, 'finished playing');
-                            addMessage('✅ [QUEUE] Finished playing chunk ' + audioItem.number);
-                            URL.revokeObjectURL(currentAudio.src); // Clean up
-                            currentAudio = null;
-                            
-                            // Play next chunk after a small delay
-                            setTimeout(() => {
-                                console.log('[PLAYBACK] Moving to next chunk after delay');
-                                playNextAudioChunk();
-                            }, 50); // 50ms gap between chunks for natural flow
-                        };
-                        
-                        // Handle errors
-                        currentAudio.onerror = function() {
-                            addMessage('❌ Error playing audio chunk ' + audioItem.number);
                             URL.revokeObjectURL(currentAudio.src);
                             currentAudio = null;
-                            // Continue to next chunk
+                            
+                            setTimeout(() => {
+                                playNextAudioChunk();
+                            }, 50);
+                        };
+                        
+                        currentAudio.onerror = function() {
+                            URL.revokeObjectURL(currentAudio.src);
+                            currentAudio = null;
                             setTimeout(() => {
                                 playNextAudioChunk();
                             }, 50);
                         };
                     }
                     
-                    function updateOrAddResponse(message) {
-                        const messagesDiv = document.getElementById('messages');
-                        const lastMessage = messagesDiv.lastElementChild;
-                        
-                        // If the last message is from the assistant, update it
-                        if (lastMessage && lastMessage.textContent.startsWith('🤖 Assistant:')) {
-                            lastMessage.textContent = message;
-                        } else {
-                            // Otherwise, add a new message
-                            messagesDiv.innerHTML += '<div>' + message + '</div>';
+                    async function toggleRecording() {
+                        if (!isSessionActive) {
+                            updateStatus('Please start a session first');
+                            return;
                         }
-                        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                        
+                        if (isRecording) {
+                            stopRecording();
+                        } else {
+                            startRecording();
+                        }
                     }
                     
                     async function startRecording() {
@@ -345,34 +520,65 @@ async def root():
                             };
                             
                             mediaRecorder.start();
-                            document.getElementById('recordBtn').disabled = true;
-                            document.getElementById('stopBtn').disabled = false;
-                            addMessage('🎤 Recording started...');
+                            isRecording = true;
+                            
+                            orb.classList.add('listening');
+                            orb.classList.remove('processing');
+                            updateOrbText('Listening...');
+                            updateStatus('Recording... tap to stop');
+                            
                         } catch (error) {
-                            addMessage('❌ Error accessing microphone: ' + error.message);
+                            updateStatus('Error accessing microphone: ' + error.message);
                         }
                     }
                     
                     function stopRecording() {
                         if (mediaRecorder && mediaRecorder.state !== 'inactive') {
                             mediaRecorder.stop();
-                            document.getElementById('recordBtn').disabled = false;
-                            document.getElementById('stopBtn').disabled = true;
-                            addMessage('🔍 Processing audio...');
+                            isRecording = false;
+                            
+                            orb.classList.remove('listening');
+                            orb.classList.add('processing');
+                            updateOrbText('Processing...');
+                            updateStatus('Processing audio...');
                         }
                     }
                     
-                    function clearCache() {
-                        // Clear all caches and reload
-                        if ('caches' in window) {
-                            caches.keys().then(names => {
-                                names.forEach(name => {
-                                    caches.delete(name);
-                                });
-                            });
+                    async function endSession() {
+                        if (sessionId) {
+                            try {
+                                await fetch('/api/v1/session/' + sessionId, { method: 'DELETE' });
+                            } catch (error) {
+                                console.error('Error ending session:', error);
+                            }
                         }
-                        // Force reload with cache busting
-                        window.location.reload(true);
+                        
+                        if (websocket) {
+                            websocket.close();
+                        }
+                        
+                        if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                            mediaRecorder.stop();
+                        }
+                        
+                        sessionId = null;
+                        isSessionActive = false;
+                        isRecording = false;
+                        
+                        startBtn.disabled = false;
+                        endBtn.disabled = true;
+                        
+                        orb.classList.remove('listening', 'processing');
+                        updateOrbText('Tap to speak');
+                        updateStatus('Session ended');
+                        
+                        // Clear audio queue
+                        audioQueue = [];
+                        if (currentAudio) {
+                            currentAudio.pause();
+                            currentAudio = null;
+                        }
+                        isPlayingAudio = false;
                     }
                 </script>
             </body>
