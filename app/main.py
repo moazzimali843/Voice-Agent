@@ -7,6 +7,7 @@ from fastapi.responses import HTMLResponse
 from contextlib import asynccontextmanager
 import os
 
+
 # Fix imports to work from any directory
 try:
     from .config import settings
