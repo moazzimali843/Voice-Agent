@@ -216,14 +216,14 @@ class TTSService:
             if format.lower() == "wav":
                 params["sample_rate"] = str(settings.AUDIO_SAMPLE_RATE)
             
-            # Make HTTP request with shorter timeout for small chunks
+            # Make HTTP request with optimized timeout for fastest response
             async with httpx.AsyncClient() as client:
                 response = await client.post(
                     self.base_url,
                     headers=headers,
                     params=params,
                     json=payload,
-                    timeout=15.0  # Shorter timeout for small chunks
+                    timeout=8.0  # Even shorter timeout for fastest chunks
                 )
                 
                 if response.status_code == 200:

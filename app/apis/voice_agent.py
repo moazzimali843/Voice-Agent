@@ -269,8 +269,8 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                 # Start streaming response with session_id for context
                 text_stream = llm_service.generate_response_streaming(transcript, relevant_chunks, session_id)
                 
-                # Buffer and chunk the streaming text
-                chunk_stream = llm_service.buffer_text_for_chunking(text_stream, min_chunk_size=15)
+                # Buffer and chunk the streaming text (reduced chunk size for faster response)
+                chunk_stream = llm_service.buffer_text_for_chunking(text_stream, min_chunk_size=5)
                 
                 full_response = ""
                 chunk_count = 0
