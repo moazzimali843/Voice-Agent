@@ -65,5 +65,6 @@ class SessionStatus(BaseModel):
     session_id: str
     status: str  # "active", "loading", "ready", "error"
     knowledge_loaded: bool
+    realtime_connected: bool = False
     created_at: datetime
     last_activity: datetime 

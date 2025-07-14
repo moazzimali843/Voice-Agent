@@ -8,8 +8,12 @@ try:
     from ..models.schemas import KnowledgeChunk
     from ..config import settings
 except ImportError:
-    from models.schemas import KnowledgeChunk
-    from config import settings
+    try:
+        from models.schemas import KnowledgeChunk
+        from config import settings
+    except ImportError:
+        from app.models.schemas import KnowledgeChunk
+        from app.config import settings
 import logging
 
 logger = logging.getLogger(__name__)
@@ -213,6 +217,14 @@ class KnowledgeService:
         total_score = (exact_score + partial_score + bonus_score) / (content_word_count / 200)
         
         return total_score
+    
+    def get_all_knowledge_chunks(self, session_id: str) -> List[KnowledgeChunk]:
+        """Get all knowledge chunks for a session (for building cached context)"""
+        if session_id not in self.session_knowledge:
+            logger.warning(f"No knowledge base loaded for session {session_id}")
+            return []
+        
+        return self.session_knowledge[session_id]
     
     def clear_session_knowledge(self, session_id: str) -> bool:
         """Clear knowledge base for a specific session"""

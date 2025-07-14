@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Assistant</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            overflow: hidden;
+        }
+
+        .container {
+            text-align: center;
+            max-width: 400px;
+            width: 100%;
+            padding: 40px 20px;
+        }
+
+        .title {
+            font-size: 24px;
+            font-weight: 500;
+            margin-bottom: 40px;
+            opacity: 0.9;
+        }
+
+        .voice-button {
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            border: none;
+            background: linear-gradient(135deg, #4ADE80 0%, #22C55E 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 30px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+            outline: none;
+        }
+
+        .voice-button:hover {
+            transform: scale(1.05);
+            box-shadow: 0 20px 40px rgba(74, 222, 128, 0.3);
+        }
+
+        .voice-button.listening {
+            background: linear-gradient(135deg, #EF4444 0%, #DC2626 100%);
+            animation: pulse 2s infinite;
+        }
+
+        .voice-button.processing {
+            background: linear-gradient(135deg, #3B82F6 0%, #2563EB 100%);
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+            50% { transform: scale(1.05); box-shadow: 0 0 0 20px rgba(239, 68, 68, 0); }
+        }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        .mic-icon {
+            width: 40px;
+            height: 40px;
+            fill: white;
+        }
+
+        .status {
+            font-size: 16px;
+            opacity: 0.8;
+            margin-bottom: 20px;
+            min-height: 20px;
+        }
+
+        .transcript {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 20px;
+            margin: 20px 0;
+            min-height: 60px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            display: none;
+        }
+
+        .transcript.visible {
+            display: block;
+        }
+
+        .error {
+            color: #EF4444;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+
+        .connection-status {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+            opacity: 0.7;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #EF4444;
+        }
+
+        .status-dot.connected {
+            background: #22C55E;
+        }
+
+        .waveform {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 2px;
+            height: 40px;
+            margin: 20px 0;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .waveform.active {
+            opacity: 1;
+        }
+
+        .wave-bar {
+            width: 3px;
+            background: linear-gradient(to top, #4ADE80, #22C55E);
+            border-radius: 2px;
+            animation: wave 1.5s ease-in-out infinite;
+        }
+
+        .wave-bar:nth-child(1) { animation-delay: 0.1s; }
+        .wave-bar:nth-child(2) { animation-delay: 0.2s; }
+        .wave-bar:nth-child(3) { animation-delay: 0.3s; }
+        .wave-bar:nth-child(4) { animation-delay: 0.4s; }
+        .wave-bar:nth-child(5) { animation-delay: 0.5s; }
+
+        @keyframes wave {
+            0%, 100% { height: 10px; }
+            50% { height: 30px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="connection-status">
+        <div class="status-dot" id="statusDot"></div>
+        <span id="connectionStatus">Connecting...</span>
+    </div>
+
+    <div class="container">
+        <h1 class="title">Voice Assistant</h1>
+        
+        <div class="status" id="status">Tap to start conversation</div>
+        
+        <button class="voice-button" id="voiceButton">
+            <svg class="mic-icon" viewBox="0 0 24 24">
+                <path d="M12 1c-1.66 0-3 1.34-3 3v8c0 1.66 1.34 3 3 3s3-1.34 3-3V4c0-1.66-1.34-3-3-3zm0 18c-2.76 0-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V23h2v-2.08c3.39-.49 6-3.39 6-6.92h-2c0 2.76-2.24 5-5 5z"/>
+            </svg>
+        </button>
+
+        <div class="waveform" id="waveform">
+            <div class="wave-bar"></div>
+            <div class="wave-bar"></div>
+            <div class="wave-bar"></div>
+            <div class="wave-bar"></div>
+            <div class="wave-bar"></div>
+        </div>
+
+        <div class="transcript" id="transcript"></div>
+        <div class="error" id="error"></div>
+    </div>
+
+    <script>
+        class VoiceAssistant {
+            constructor() {
+                this.voiceButton = document.getElementById('voiceButton');
+                this.status = document.getElementById('status');
+                this.transcript = document.getElementById('transcript');
+                this.error = document.getElementById('error');
+                this.waveform = document.getElementById('waveform');
+                this.statusDot = document.getElementById('statusDot');
+                this.connectionStatus = document.getElementById('connectionStatus');
+                
+                this.isListening = false;
+                this.isProcessing = false;
+                this.websocket = null;
+                this.sessionId = null;
+                this.audioContext = null;
+                this.mediaStream = null;
+                this.audioWorkletNode = null;
+                
+                this.init();
+            }
+
+            async init() {
+                this.voiceButton.addEventListener('click', () => this.toggleListening());
+                this.voiceButton.addEventListener('touchstart', (e) => {
+                    e.preventDefault();
+                    this.toggleListening();
+                });
+                
+                await this.initializeSession();
+            }
+
+            async initializeSession() {
+                try {
+                    this.updateStatus('Connecting...', 'connecting');
+                    
+                    // Start session
+                    const response = await fetch('/api/v1/start-session', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' }
+                    });
+                    
+                    if (!response.ok) throw new Error('Failed to start session');
+                    
+                    const data = await response.json();
+                    this.sessionId = data.session_id;
+                    
+                    // Connect WebSocket
+                    await this.connectWebSocket();
+                    
+                } catch (error) {
+                    console.error('Session initialization error:', error);
+                    this.showError('Failed to connect. Please refresh the page.');
+                }
+            }
+
+            async connectWebSocket() {
+                const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const wsUrl = `${wsProtocol}//${window.location.host}/api/v1/ws/${this.sessionId}`;
+                
+                this.websocket = new WebSocket(wsUrl);
+                
+                this.websocket.onopen = () => {
+                    console.log('WebSocket connected');
+                    this.updateConnectionStatus(true);
+                    this.updateStatus('Ready to listen', 'ready');
+                };
+                
+                this.websocket.onmessage = (event) => {
+                    this.handleWebSocketMessage(event);
+                };
+                
+                this.websocket.onerror = (error) => {
+                    console.error('WebSocket error:', error);
+                    this.showError('Connection error. Please refresh the page.');
+                };
+                
+                this.websocket.onclose = () => {
+                    console.log('WebSocket disconnected');
+                    this.updateConnectionStatus(false);
+                    this.updateStatus('Disconnected', 'error');
+                };
+            }
+
+            async handleWebSocketMessage(event) {
+                try {
+                    if (event.data instanceof Blob) {
+                        // Handle audio response
+                        await this.playAudioResponse(event.data);
+                        return;
+                    }
+                    
+                    const data = JSON.parse(event.data);
+                    
+                    switch (data.type) {
+                        case 'response.audio_transcript.done':
+                            if (data.transcript) {
+                                this.showTranscript(data.transcript);
+                            }
+                            break;
+                            
+                        case 'response.done':
+                            this.updateStatus('Response complete', 'ready');
+                            this.setProcessing(false);
+                            break;
+                            
+                        case 'conversation.item.input_audio_transcription.completed':
+                            if (data.transcript) {
+                                this.showTranscript(`You: ${data.transcript}`);
+                            }
+                            break;
+                            
+                        case 'error':
+                            this.showError(data.error?.message || 'Unknown error');
+                            this.setProcessing(false);
+                            break;
+                            
+                        default:
+                            console.log('Received:', data.type);
+                    }
+                    
+                } catch (error) {
+                    console.error('Message handling error:', error);
+                }
+            }
+
+            async playAudioResponse(audioBlob) {
+                try {
+                    if (!this.audioContext) {
+                        this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    }
+                    
+                    // Resume audio context if suspended
+                    if (this.audioContext.state === 'suspended') {
+                        await this.audioContext.resume();
+                    }
+                    
+                    const arrayBuffer = await audioBlob.arrayBuffer();
+                    const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
+                    
+                    const source = this.audioContext.createBufferSource();
+                    source.buffer = audioBuffer;
+                    source.connect(this.audioContext.destination);
+                    
+                    source.onended = () => {
+                        this.updateStatus('Ready to listen', 'ready');
+                        this.setProcessing(false);
+                    };
+                    
+                    source.start();
+                    this.updateStatus('Speaking...', 'speaking');
+                    
+                } catch (error) {
+                    console.error('Audio playback error:', error);
+                    this.showError('Audio playback failed');
+                    this.setProcessing(false);
+                }
+            }
+
+            async toggleListening() {
+                if (this.isProcessing) return;
+                
+                if (!this.isListening) {
+                    await this.startListening();
+                } else {
+                    this.stopListening();
+                }
+            }
+
+            async startListening() {
+                if (!this.websocket || this.websocket.readyState !== WebSocket.OPEN) {
+                    this.showError('Not connected. Please refresh the page.');
+                    return;
+                }
+                
+                try {
+                    this.clearError();
+                    this.hideTranscript();
+                    
+                    // Initialize audio context
+                    this.audioContext = new (window.AudioContext || window.webkitAudioContext)({
+                        sampleRate: 24000
+                    });
+                    
+                    // Get microphone access
+                    this.mediaStream = await navigator.mediaDevices.getUserMedia({
+                        audio: {
+                            sampleRate: 24000,
+                            channelCount: 1,
+                            echoCancellation: true,
+                            noiseSuppression: true,
+                            autoGainControl: false
+                        }
+                    });
+
+                    // Create audio worklet for real-time processing
+                    await this.audioContext.audioWorklet.addModule('data:text/javascript;base64,' + 
+                        btoa(`
+                            class AudioProcessor extends AudioWorkletProcessor {
+                                process(inputs, outputs, parameters) {
+                                    const input = inputs[0];
+                                    if (input && input[0]) {
+                                        const inputData = input[0];
+                                        const int16Array = new Int16Array(inputData.length);
+                                        
+                                        for (let i = 0; i < inputData.length; i++) {
+                                            const sample = Math.max(-1, Math.min(1, inputData[i]));
+                                            int16Array[i] = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
+                                        }
+                                        
+                                        this.port.postMessage(int16Array.buffer);
+                                    }
+                                    return true;
+                                }
+                            }
+                            registerProcessor('audio-processor', AudioProcessor);
+                        `)
+                    );
+
+                    const source = this.audioContext.createMediaStreamSource(this.mediaStream);
+                    this.audioWorkletNode = new AudioWorkletNode(this.audioContext, 'audio-processor');
+                    
+                    this.audioWorkletNode.port.onmessage = (event) => {
+                        if (this.isListening && this.websocket && this.websocket.readyState === WebSocket.OPEN) {
+                            this.websocket.send(event.data);
+                        }
+                    };
+
+                    source.connect(this.audioWorkletNode);
+                    
+                    this.isListening = true;
+                    this.setListening(true);
+                    this.updateStatus('Listening...', 'listening');
+                    
+                } catch (error) {
+                    console.error('Start listening error:', error);
+                    this.showError('Microphone access denied or not available');
+                }
+            }
+
+            stopListening() {
+                this.isListening = false;
+                this.setListening(false);
+                this.setProcessing(true);
+                this.updateStatus('Processing...', 'processing');
+                
+                // Cleanup audio resources
+                if (this.mediaStream) {
+                    this.mediaStream.getTracks().forEach(track => track.stop());
+                    this.mediaStream = null;
+                }
+                
+                if (this.audioWorkletNode) {
+                    this.audioWorkletNode.disconnect();
+                    this.audioWorkletNode = null;
+                }
+            }
+
+            setListening(listening) {
+                this.voiceButton.classList.toggle('listening', listening);
+                this.waveform.classList.toggle('active', listening);
+            }
+
+            setProcessing(processing) {
+                this.isProcessing = processing;
+                this.voiceButton.classList.toggle('processing', processing);
+            }
+
+            updateStatus(message, type) {
+                this.status.textContent = message;
+                this.status.className = `status ${type}`;
+            }
+
+            updateConnectionStatus(connected) {
+                this.statusDot.classList.toggle('connected', connected);
+                this.connectionStatus.textContent = connected ? 'Connected' : 'Disconnected';
+            }
+
+            showTranscript(text) {
+                this.transcript.textContent = text;
+                this.transcript.classList.add('visible');
+            }
+
+            hideTranscript() {
+                this.transcript.classList.remove('visible');
+            }
+
+            showError(message) {
+                this.error.textContent = message;
+            }
+
+            clearError() {
+                this.error.textContent = '';
+            }
+        }
+
+        // Initialize when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            new VoiceAssistant();
+        });
+    </script>
+</body>
+</html> 
