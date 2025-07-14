@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import List, Optional
+from typing import List, Optional, Dict
 from openai import AsyncOpenAI
 # Fix imports to work from any directory
 try:
@@ -13,18 +13,20 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 class LLMService:
-    """Service for Large Language Model operations using OpenAI API with streaming"""
+    """Service for Large Language Model operations using OpenAI API with streaming and context management"""
     
     def __init__(self):
         self.client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+        self.conversation_history: Dict[str, List[dict]] = {}  # session_id -> messages list
     
-    async def generate_response_streaming(self, query: str, context_chunks: List[KnowledgeChunk]):
+    async def generate_response_streaming(self, query: str, context_chunks: List[KnowledgeChunk], session_id: Optional[str] = None):
         """
-        Generate streaming response using OpenAI API
+        Generate streaming response using OpenAI API with conversation context
         
         Args:
             query: User's query
             context_chunks: Relevant knowledge base chunks
+            session_id: Session ID for conversation history
             
         Yields:
             Text chunks as they are generated
@@ -167,13 +169,24 @@ class LLMService:
     <think> ... </think>
 """
 
+            # Get conversation history for this session
+            conversation_context = []
+            if session_id and session_id in self.conversation_history:
+                conversation_context = self.conversation_history[session_id]
+            
+            # Add current query to conversation history
+            conversation_context.append({"role": "user", "content": query})
+            
+            # Build messages with conversation history
+            messages = [
+                {"role": "system", "content": system_prompt},
+                *conversation_context
+            ]
+            
             # Generate streaming response
             stream = await self.client.chat.completions.create(
                 model=settings.OPENAI_MODEL,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": prompt}
-                ],
+                messages=messages,
                 max_tokens=settings.MAX_TOKENS,
                 temperature=settings.TEMPERATURE,
                 top_p=0.9,
@@ -182,17 +195,259 @@ class LLMService:
                 stream=True
             )
             
-            logger.info(f"Starting streaming response for query: {query[:50]}...")
+            logger.info(f"Starting streaming response for query: {query[:50]}... (Session: {session_id})")
+            
+            # Collect the full response to add to conversation history
+            full_response = ""
             
             async for chunk in stream:
                 if chunk.choices and len(chunk.choices) > 0:
                     delta = chunk.choices[0].delta
                     if delta and delta.content:
-                        yield delta.content
+                        content = delta.content
+                        full_response += content
+                        yield content
+            
+            # Add assistant's response to conversation history
+            if session_id and full_response:
+                conversation_context.append({"role": "assistant", "content": full_response})
+                self.conversation_history[session_id] = conversation_context
+                
+                # Limit conversation history to last 10 messages to prevent token overflow
+                if len(conversation_context) > 10:
+                    # Keep system message and last 9 conversation messages
+                    self.conversation_history[session_id] = conversation_context[-9:]
                         
         except Exception as e:
             logger.error(f"Error in streaming LLM response: {str(e)}")
             yield None
+    
+    async def generate_response(self, query: str, context_chunks: List[KnowledgeChunk], session_id: Optional[str] = None) -> Optional[LLMResponse]:
+        """
+        Generate non-streaming response using OpenAI API with conversation context
+        
+        Args:
+            query: User's query
+            context_chunks: Relevant knowledge base chunks
+            session_id: Session ID for conversation history
+            
+        Returns:
+            LLMResponse object or None if error
+        """
+        try:
+            # Build context from knowledge chunks
+            context = self._build_context(context_chunks)
+            
+            # Create prompt
+            prompt = self._create_prompt(query, context)
+            
+            # Set system prompt as a variable
+            system_prompt = """instructions: |
+  System Role:
+    You are Savannah, a Client Intake Specialist for Bush and Bush Law Group, 
+    a reputable personal injury law firm. You're warm, kind, and professional. 
+    Your job is to make callers feel comfortable and heard, while smoothly gathering 
+    the info the legal team needs to evaluate their case.
+
+  Personality, Tone & Style:
+
+    Tone: 
+      Friendly, calm, and reassuring.
+
+    Speech Style: 
+      Speak naturally—use light filler words like "mm-hmm," "okay," "I see," "got it," and soft pauses (".", "...") to sound real. Avoid sounding like a robot or script.
+
+    Pace: 
+      Speak gently and clearly. Never rush or talk over the caller.
+
+    Empathy: 
+      If someone sounds upset or unsure, show kindness. Be validating and patient. 
+      Instead of "wow," say things like:
+        - "That must've been really hard."
+        - "I'm so sorry you're going through this."
+        - "That sounds painful..."
+
+    Avoid Legal Jargon: 
+      Keep your language simple and human. Don't use complex terms.
+
+  Conversation Flow:
+
+    - Greet warmly.
+    - Reassure them that help is available and there are no upfront costs.
+    - Collect info one step at a time, through a gentle, friendly conversation.
+    - If they express a concern, address it with calm, helpful language.
+    - End kindly, explain next steps, and thank them for reaching out.
+
+  Required Information (Ask Smoothly One at a Time):
+
+    - Caller's full name
+    - When the accident happened
+    - Where it happened (City, State, Street)
+    - Were they physically hurt?
+    - What kind of injuries?
+    - Did they see a doctor?
+    - Any emotional or mental effects?
+    - Has this affected their job or finances?
+    - Was any property damaged (like a car)?
+    - Are they already working with a lawyer?
+    - Was a police report filed?
+      - If yes: Get the report number + department
+
+  Key Policies to Mention Casually if Needed:
+
+    - We never charge upfront—you only pay if we win.
+    - We take 33% of the final settlement—you keep the rest.
+    - No cost for medical care—we handle that.
+    - We only help people who reach out to us—we never solicit.
+    - Your case is against insurance, not a person.
+    - Getting medical help now protects your health *and* case.
+
+  Concern Handler (Respond Gently When Needed):
+
+    Concern / Objection                     How Savannah Responds
+    --------------------                   -----------------------
+    "I already spoke with insurance."      "Got it. Just so you know, they usually try to settle low. 
+                                           We make sure you get everything you deserve."
+
+    "I thought this was insurance."        "We're actually a law firm—but no pressure. 
+                                           We're just here to help."
+
+    "What about fees?"                     "There's no fee unless we win. You don't pay anything upfront."
+
+    "I just want my car fixed."            "Totally understand. We help with that—and if you're hurt at all, 
+                                           we can make sure you're covered there too."
+
+    "Someone referred me."                 "That's great! Most folks come through a referral. 
+                                           Let's go through your details now."
+
+    "I don't want to sue anyone."          "That's okay. These claims go against insurance, 
+                                           not the individual."
+
+    "I'm not really injured."              "Sometimes symptoms show up later. 
+                                           A quick check can really help, just in case."
+
+    "Can I talk to my spouse first?"       "Of course. We can include them now or wait until you're ready."
+
+    "I'm worried about loans."             "We work with third-party lenders—and if we don't win, 
+                                           you don't repay anything."
+
+    "I'll wait for the report first."      "That's fine—but we can start care now, 
+                                           so you don't delay anything important."
+
+    "I might handle it myself."            "You absolutely can—just know we take care of all the hard stuff 
+                                           and often get more for you."
+
+    "Still not sure about the cost."       "All costs are covered upfront. You just focus on healing."
+
+    "How much is my case worth?"           "It depends on your injuries, costs, and what happened. 
+                                           We'll help figure that out with you."
+
+  Few-Shot Style Responses:
+
+    Caller: "I don't think I'm hurt too bad."
+    Savannah: "That's totally fair. Some things take a while to show up... 
+              Did you have a chance to get checked out yet?"
+
+    Caller: "I'm just calling to get my car repaired."
+    Savannah: "Makes sense. We can definitely help with that—and if anything else happened, 
+              even stress or pain, we'll make sure that's covered too."
+
+    Caller: "I haven't seen a doctor yet."
+    Savannah: "No worries. A lot of folks wait. If you'd like, 
+              we can help set up a visit just to be safe."
+
+    Caller: "I'm not sure if I want to move forward."
+    Savannah: "That's okay. There's no pressure—we're just here to give you options."
+
+  Instruction:
+    Don't ask all the intake questions at once. Keep it conversational and warm.
+    Let the client talk—don't sound like you're filling out a form.
+    Be relaxed and human, not stiff or scripted.
+    If a caller shares something personal or upsetting, don't just move on—pause, validate, and show care.
+    ask questions one by one smoothly in a conversation dont ask everything at once .
+    get proper info related to case do not get generic like if you ask for address and client says LA but its not specific ask for exact address
+  Special Tag Instructions:
+
+    When reasoning through something uncertain, use:
+    <think> ... </think>
+"""
+
+            # Get conversation history for this session
+            conversation_context = []
+            if session_id and session_id in self.conversation_history:
+                conversation_context = self.conversation_history[session_id]
+            
+            # Add current query to conversation history
+            conversation_context.append({"role": "user", "content": query})
+            
+            # Build messages with conversation history
+            messages = [
+                {"role": "system", "content": system_prompt},
+                *conversation_context
+            ]
+            
+            # Generate response
+            response = await self.client.chat.completions.create(
+                model=settings.OPENAI_MODEL,
+                messages=messages,
+                max_tokens=settings.MAX_TOKENS,
+                temperature=settings.TEMPERATURE,
+                top_p=0.9,
+                frequency_penalty=0.1,
+                presence_penalty=0.1
+            )
+            
+            if response and response.choices and len(response.choices) > 0:
+                message = response.choices[0].message
+                if message and message.content:
+                    llm_response = LLMResponse(
+                        response=message.content.strip(),
+                        tokens_used=response.usage.total_tokens if response.usage else 0,
+                        model=settings.OPENAI_MODEL
+                    )
+                    
+                    # Add assistant's response to conversation history
+                    if session_id:
+                        conversation_context.append({"role": "assistant", "content": message.content.strip()})
+                        self.conversation_history[session_id] = conversation_context
+                        
+                        # Limit conversation history to last 10 messages to prevent token overflow
+                        if len(conversation_context) > 10:
+                            # Keep system message and last 9 conversation messages
+                            self.conversation_history[session_id] = conversation_context[-9:]
+                    
+                    logger.info(f"Successfully generated LLM response for query: {query[:50]}... (Session: {session_id})")
+                    return llm_response
+            
+            logger.warning("No valid response received from OpenAI API")
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error generating LLM response: {str(e)}")
+            return None
+    
+    def clear_conversation_history(self, session_id: str):
+        """
+        Clear conversation history for a specific session
+        
+        Args:
+            session_id: Session ID to clear history for
+        """
+        if session_id in self.conversation_history:
+            del self.conversation_history[session_id]
+            logger.info(f"Cleared conversation history for session: {session_id}")
+    
+    def get_conversation_history(self, session_id: str) -> List[dict]:
+        """
+        Get conversation history for a specific session
+        
+        Args:
+            session_id: Session ID to get history for
+            
+        Returns:
+            List of conversation messages
+        """
+        return self.conversation_history.get(session_id, [])
     
     def _build_context(self, context_chunks: List[KnowledgeChunk]) -> str:
         """

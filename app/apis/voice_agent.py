@@ -161,8 +161,8 @@ async def process_text_query(query: TextQuery):
         # Search knowledge base
         relevant_chunks = knowledge_service.search_knowledge(query.session_id, query.query)
         
-        # Generate response
-        llm_response = await llm_service.generate_response(query.query, relevant_chunks)
+        # Generate response with session_id for context
+        llm_response = await llm_service.generate_response(query.query, relevant_chunks, query.session_id)
         
         if not llm_response:
             raise HTTPException(status_code=500, detail="Failed to generate response")
@@ -266,8 +266,8 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
             })
             
             try:
-                # Start streaming response
-                text_stream = llm_service.generate_response_streaming(transcript, relevant_chunks)
+                # Start streaming response with session_id for context
+                text_stream = llm_service.generate_response_streaming(transcript, relevant_chunks, session_id)
                 
                 # Buffer and chunk the streaming text
                 chunk_stream = llm_service.buffer_text_for_chunking(text_stream, min_chunk_size=15)
